@@ -141,7 +141,7 @@ int main(int argc, char* argv[]){
 			rte_exit(EXIT_FAILURE,"Error with rte_eth_rx_burst!\n");
 		}
 /*----------------------------------------------------------
-	|	ethhdr  |   iphdr  |  udphdr/tcphdr   |   payload  |
+|	ethhdr  |   iphdr  |  udphdr/tcphdr   |   payload  |
   ----------------------------------------------------------
 */
 		unsigned i = 0;
