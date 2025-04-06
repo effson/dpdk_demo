@@ -71,7 +71,7 @@ int main(int argc, char* argv[]){
 		for(i = 0;i < nb_recv; i ++){
 			
 			struct rte_ether_hdr *ehdr = rte_pktmbuf_mtod(mbufs[i], struct rte_ether_hdr *);
-			if(ehdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPR_IPV4)){
+			if(ehdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)){
 				continue;
 			}
 
