@@ -2,12 +2,81 @@
 #include<unistd.h>
 #include<rte_eal.h>
 #include<rte_ethdev.h>
+#include<rte_mbuf.h>
 
 #include<arpa/inet.h>
 
 #define NUM_MBUFS 2048
 #define BURST_SIZE 128
 
+#define ENABLE_SEND 1
+// src_mac, dst_mac    src_ip, dst_ip    src_port,dst_port
+
+#if ENABLE_SEND
+
+uint8_t gSrcMac[RTE_ETHER_ADDR_LEN];
+uint8_t gDstMac[RTE_ETHER_ADDR_LEN];
+
+uint8_t gSrcIP;
+uint8_t gDstIP;
+
+uint16_t gSrcPort;
+uint16_t gDstPort;
+
+#endif
+
+static int dpdk_encode_udp_pkt(uint8_t *msg, char *data, uint16_t total_length){
+
+	// ether 以太网头部
+	struct rte_ether_hdr* eth = (struct rte_ether_hdr *)msg;
+	rte_memcpy(eth->s_addr.addr_bytes, gSrcMac, RTE_ETHER_ADDR_LEN);
+	rte_memcpy(eth->d_addr.addr_bytes, gDstMac, RTE_ETHER_ADDR_LEN);
+	eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
+
+	// iphdr ip头部
+	struct rte_ipv4_hdr* iphdr = (struct rte_ipv4_hdr *)(eth + 1);
+	iphdr->version_ihl = 0x54;
+	iphdr->type_of_service = 0x0;
+	iphdr->total_length = htons(total_length - sizeof(struct rte_ether_hdr));
+	iphdr->packet_id = 0;
+	iphdr->fragment_offset = 0;
+	iphdr->next_proto_id = IPPROTO_UDP;
+	iphdr->src_addr = gSrcIP;
+	iphdr->dst_addr = gDstIP;
+
+	iphdr->hdr_checksum = 0;
+	iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
+
+	// UDP 头部
+	struct rte_udp_hdr* udphdr = (struct rte_udp_hdr *)(iphdr + 1);
+	udphdr->src_port = gSrcPort;
+	udphdr->dst_port = gDstPort;
+	uint16_t udp_len = total_length - sizeof(struct rte_ether_hdr) -sizeof(struct rte_ipv4_hdr);
+	udphdr->dgram_len = htons(udp_len);
+
+	rte_memcpy((uint8_t *)(udphdr + 1), data, udp_len - sizeof(struct rte_udp_hdr));
+
+	udphdr->dgram_cksum = 0;
+	udphdr->dgram_cksum = rte_ipv4_udptcp_cksum(iphdr, udphdr);
+
+	return total_length;
+}
+
+static struct rte_mbuf *dpdk_send(struct rte_mempool *mbuf_pool, char *data, uint16_t length){
+	const unsigned total_length = length + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr);
+	struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mbuf_pool);
+	if(!mbuf){
+		rte_exit(EXIT_FAILURE,"Error with mbuf alloc!\n");
+	}
+	mbuf->pkt_len = total_length;
+	mbuf->data_len = total_length;
+
+	uint8_t *pktdata = rte_pktmbuf_mtod(mbuf, uint8_t*);
+
+	dpdk_encode_udp_pkt(pktdata, data, total_length);
+
+	return mbuf;
+}
 
 
 int gDpdkPortId = 0;
@@ -53,6 +122,11 @@ int main(int argc, char* argv[]){
 	if(rte_eth_dev_start(gDpdkPortId) < 0){
 		rte_exit(EXIT_FAILURE,"Cound Not Start!\n");
 	}
+	 struct rte_ether_addr mac;
+     rte_eth_macaddr_get(gDpdkPortId, &mac);
+     printf("Port MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+         mac.addr_bytes[0], mac.addr_bytes[1], mac.addr_bytes[2],
+         mac.addr_bytes[3], mac.addr_bytes[4], mac.addr_bytes[5]);
 
 	printf("dev start success\n");
 
@@ -60,6 +134,9 @@ int main(int argc, char* argv[]){
 
 		struct rte_mbuf *mbufs[BURST_SIZE]; 
 		unsigned nb_recv = rte_eth_rx_burst(gDpdkPortId, 0, mbufs, BURST_SIZE);
+		if(nb_recv > 0){
+			printf("recv %u packets\n", nb_recv);
+		}
 		if (nb_recv > BURST_SIZE){
 			rte_exit(EXIT_FAILURE,"Error with rte_eth_rx_burst!\n");
 		}
@@ -79,12 +156,25 @@ int main(int argc, char* argv[]){
 			if(iphdr->next_proto_id == IPPROTO_UDP){
 				
 				struct rte_udp_hdr *udphdr = (struct rte_udp_hdr *)(iphdr + 1);
-				uint16_t length = udphdr->dgram_len;
+
+#if ENABLE_SEND
+				rte_memcpy(gSrcMac, ehdr->d_addr.addr_bytes, RTE_ETHER_ADDR_LEN);
+				rte_memcpy(gDstMac, ehdr->s_addr.addr_bytes, RTE_ETHER_ADDR_LEN);
+
+				rte_memcpy(&gSrcIP, &iphdr->dst_addr, sizeof(uint32_t));
+				rte_memcpy(&gDstIP, &iphdr->src_addr, sizeof(uint32_t));
+
+				rte_memcpy(&gSrcPort, &udphdr->dst_port, sizeof(uint16_t));
+				rte_memcpy(&gDstPort, &udphdr->src_port, sizeof(uint16_t));
+#endif
+				uint16_t length = ntohs(udphdr->dgram_len) - sizeof(struct rte_udp_hdr);				
 				printf("length : %d, content : %s\n", length, (char *)(udphdr + 1));
-			
+
+				dpdk_send(mbuf_pool, (char *)(udphdr + 1), length);
 			}
 		}
 	}
 	
 	return 0;
 }
+
