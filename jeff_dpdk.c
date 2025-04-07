@@ -98,7 +98,7 @@ static int dpdk_encode_udp_pkt(uint8_t *msg, unsigned char *data, uint16_t total
 	iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
 
 	// UDP 头部
-	struct rte_udp_hdr* udphdr = (struct rte_udp_hdr *)(msg + sizeof(struct rte_ether_hdr) + sizeof(struct rte_udp_hdr));
+	struct rte_udp_hdr* udphdr = (struct rte_udp_hdr *)(msg + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr));
 	udphdr->src_port = gSrcPort;
 	udphdr->dst_port = gDstPort;
 	uint16_t udp_len = total_length - sizeof(struct rte_ether_hdr) -sizeof(struct rte_ipv4_hdr);
