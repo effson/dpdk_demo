@@ -120,7 +120,11 @@ static int dpdk_encode_udp_pkt(uint8_t *msg, unsigned char *data, uint16_t total
 }
 
 static struct rte_mbuf *dpdk_send(struct rte_mempool *mbuf_pool, uint8_t *data, uint16_t length){
-
+	/*
+	Ethernet	struct rte_ether_hdr	14 字节
+	IPv4	struct rte_ipv4_hdr			20 字节
+	UDP	struct rte_udp_hdr				8 字节
+	*/
 	const unsigned total_length = length + 42;
 	
 	struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mbuf_pool);
